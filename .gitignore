@@ -1,0 +1,17 @@
+# Data
+data/*.duckdb
+data/*.duckdb.wal
+*.log
+logs/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+# Env
+.env
+# OS
+.DS_Store
