@@ -5,3 +5,8 @@ pyyaml>=6.0
 pytest>=7.4
 dbt-core>=1.8,<2.0
 dbt-duckdb>=1.8,<2.0
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
