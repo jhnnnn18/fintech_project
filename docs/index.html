@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Data Pipeline — Backtest Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6; /* strategy */
+    --series-2:       #eb6834; /* benchmark */
+    --success-text:   #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --success-text:   #0ca30c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+  }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  header p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header a { color: var(--series-1); }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    color: var(--text-primary);
+  }
+  .card .subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 16px;
+  }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .stat-tile {
+    background: var(--surface-1);
+    padding: 16px;
+  }
+  .stat-tile .label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .stat-tile .value {
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: proportional-nums;
+  }
+  .stat-tile .compare {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  table.compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.compare-table th, table.compare-table td {
+    text-align: right;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--gridline);
+    font-variant-numeric: tabular-nums;
+  }
+  table.compare-table th:first-child, table.compare-table td:first-child {
+    text-align: left;
+    font-variant-numeric: normal;
+  }
+  table.compare-table th {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  .legend { display: flex; gap: 16px; margin-bottom: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
+
+  .chart-wrap { position: relative; width: 100%; }
+  svg text { fill: var(--text-muted); font-size: 11px; }
+  .axis-line { stroke: var(--baseline); stroke-width: 1; }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .crosshair { stroke: var(--baseline); stroke-width: 1; pointer-events: none; }
+  .end-label { font-size: 12px; fill: var(--text-primary); font-weight: 600; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    opacity: 0;
+    transition: opacity 0.1s;
+    white-space: nowrap;
+  }
+  .tooltip .date { color: var(--text-muted); margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: center; gap: 6px; }
+  .tooltip .key { width: 10px; height: 2px; flex: none; }
+  .tooltip .val { font-weight: 600; margin-left: auto; padding-left: 12px; }
+
+  .empty-state, .error-state {
+    color: var(--text-secondary);
+    font-size: 14px;
+    padding: 40px 20px;
+    text-align: center;
+  }
+
+  footer {
+    margin-top: 32px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  footer a { color: var(--series-1); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Market Data Pipeline — Backtest Dashboard</h1>
+    <p>
+      20/50 moving-average crossover strategy vs. buy-and-hold, long-only, net of
+      transaction costs. Not investment advice — see
+      <a href="https://github.com/jhnnnn18/fintech_project#backtest">assumptions &amp; limitations</a>
+      in the repo README.
+    </p>
+  </header>
+
+  <div id="content">
+    <div class="empty-state">Loading backtest results…</div>
+  </div>
+
+  <footer>
+    Data regenerated on a schedule by GitHub Actions from a dbt-modeled DuckDB
+    pipeline — see the <a href="https://github.com/jhnnnn18/fintech_project">source repo</a>
+    for ingestion, transformation, and backtest code.
+  </footer>
+</main>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const METRIC_META = {
+    total_return:  { label: "Total Return",  fmt: "percent" },
+    sharpe:        { label: "Sharpe Ratio",  fmt: "ratio"   },
+    max_drawdown:  { label: "Max Drawdown",  fmt: "percent" },
+    win_rate:      { label: "Win Rate",      fmt: "percent" },
+    exposure:      { label: "Exposure",      fmt: "percent" },
+    num_trades:    { label: "Trades",        fmt: "int"     },
+  };
+  const KPI_ORDER = ["total_return", "sharpe", "max_drawdown", "win_rate", "exposure", "num_trades"];
+
+  function formatMetric(value, fmt) {
+    if (value === null || value === undefined) return "—";
+    if (fmt === "percent") return (value * 100).toFixed(1) + "%";
+    if (fmt === "ratio") return value.toFixed(2);
+    if (fmt === "int") return Math.round(value).toLocaleString();
+    return String(value);
+  }
+
+  function renderKpis(container, summaryByMetric) {
+    const row = container.append("div").attr("class", "kpi-row");
+    KPI_ORDER.forEach(function (key) {
+      const meta = METRIC_META[key];
+      const rec = summaryByMetric.get(key);
+      if (!rec) return;
+      const tile = row.append("div").attr("class", "stat-tile");
+      tile.append("div").attr("class", "label").text(meta.label);
+      tile.append("div").attr("class", "value").text(formatMetric(rec.strategy, meta.fmt));
+      tile.append("div").attr("class", "compare")
+        .text("Buy & hold: " + formatMetric(rec.benchmark, meta.fmt));
+    });
+  }
+
+  function renderSummaryTable(container, summaryByMetric) {
+    const card = container.append("div").attr("class", "card");
+    card.append("h2").text("Strategy vs. buy-and-hold");
+    card.append("p").attr("class", "subtitle")
+      .text("The accessible, non-chart view of the KPI row above — same numbers.");
+    const table = card.append("table").attr("class", "compare-table");
+    const thead = table.append("thead").append("tr");
+    thead.append("th").text("Metric");
+    thead.append("th").text("Strategy");
+    thead.append("th").text("Buy & hold");
+    const tbody = table.append("tbody");
+    KPI_ORDER.forEach(function (key) {
+      const meta = METRIC_META[key];
+      const rec = summaryByMetric.get(key);
+      if (!rec) return;
+      const tr = tbody.append("tr");
+      tr.append("td").text(meta.label);
+      tr.append("td").text(formatMetric(rec.strategy, meta.fmt));
+      tr.append("td").text(formatMetric(rec.benchmark, meta.fmt));
+    });
+  }
+
+  function makeResponsiveChart(container, height, renderFn) {
+    const wrap = container.append("div").attr("class", "chart-wrap");
+    const tooltip = wrap.append("div").attr("class", "tooltip");
+    function draw() {
+      const width = wrap.node().getBoundingClientRect().width;
+      if (width <= 0) return;
+      wrap.selectAll("svg").remove();
+      const svg = wrap.append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("viewBox", "0 0 " + width + " " + height);
+      renderFn(svg, width, height, tooltip);
+    }
+    draw();
+    let raf = null;
+    new ResizeObserver(function () {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
+    }).observe(wrap.node());
+  }
+
+  function renderEquityChart(container, daily) {
+    const card = container.append("div").attr("class", "card");
+    card.append("h2").text("Equity curve");
+    card.append("p").attr("class", "subtitle").text("Growth of $1, indexed to the first post-warm-up day.");
+
+    const legend = card.append("div").attr("class", "legend");
+    [["Strategy", "var(--series-1)"], ["Buy & hold", "var(--series-2)"]].forEach(function (d) {
+      const item = legend.append("div").attr("class", "legend-item");
+      item.append("div").attr("class", "legend-swatch").style("background", d[1]);
+      item.append("span").text(d[0]);
+    });
+
+    makeResponsiveChart(card, 320, function (svg, width, height, tooltip) {
+      const margin = { top: 10, right: 56, bottom: 26, left: 48 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+      const g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      const parseDate = d3.utcParse("%Y-%m-%d");
+      const data = daily.map(function (d) {
+        return { date: parseDate(d.date), strategy: d.strategy_equity, benchmark: d.benchmark_equity };
+      });
+
+      const x = d3.scaleUtc().domain(d3.extent(data, function (d) { return d.date; })).range([0, innerW]);
+      const yMin = d3.min(data, function (d) { return Math.min(d.strategy, d.benchmark); });
+      const yMax = d3.max(data, function (d) { return Math.max(d.strategy, d.benchmark); });
+      const y = d3.scaleLinear().domain([yMin * 0.98, yMax * 1.02]).range([innerH, 0]);
+
+      g.append("g").attr("class", "gridline")
+        .selectAll("line").data(y.ticks(5)).join("line")
+        .attr("x1", 0).attr("x2", innerW).attr("y1", y).attr("y2", y)
+        .attr("class", "gridline");
+
+      g.append("g").attr("transform", "translate(0," + innerH + ")")
+        .call(d3.axisBottom(x).ticks(Math.max(innerW / 100, 2)).tickSizeOuter(0))
+        .call(function (sel) { sel.select(".domain").attr("class", "axis-line"); sel.selectAll("line").remove(); });
+
+      g.append("g")
+        .call(d3.axisLeft(y).ticks(5).tickFormat(function (v) { return "$" + v.toFixed(2); }).tickSizeOuter(0))
+        .call(function (sel) { sel.select(".domain").remove(); sel.selectAll("line").remove(); });
+
+      function drawLine(key, color) {
+        const line = d3.line().x(function (d) { return x(d.date); }).y(function (d) { return y(d[key]); });
+        g.append("path").datum(data).attr("fill", "none").attr("stroke", color)
+          .attr("stroke-width", 2).attr("stroke-linejoin", "round").attr("stroke-linecap", "round")
+          .attr("d", line);
+        const last = data[data.length - 1];
+        g.append("circle").attr("cx", x(last.date)).attr("cy", y(last[key])).attr("r", 4)
+          .attr("fill", color).attr("stroke", "var(--surface-1)").attr("stroke-width", 2);
+      }
+      drawLine("strategy", "var(--series-1)");
+      drawLine("benchmark", "var(--series-2)");
+
+      // crosshair + tooltip
+      const bisect = d3.bisector(function (d) { return d.date; }).left;
+      const crosshair = g.append("line").attr("class", "crosshair").attr("y1", 0).attr("y2", innerH).style("opacity", 0);
+      const overlay = g.append("rect").attr("width", innerW).attr("height", innerH)
+        .attr("fill", "transparent").style("cursor", "crosshair");
+
+      function onMove(event) {
+        const [mx] = d3.pointer(event);
+        const date = x.invert(mx);
+        const i = Math.min(bisect(data, date, 1), data.length - 1);
+        const d0 = data[i - 1], d1 = data[i];
+        const d = (d1 && date - d0.date > d1.date - date) ? d1 : d0;
+        if (!d) return;
+        crosshair.attr("x1", x(d.date)).attr("x2", x(d.date)).style("opacity", 1);
+        tooltip.style("opacity", 1)
+          .style("left", (margin.left + x(d.date) + 14) + "px")
+          .style("top", margin.top + "px")
+          .html("");
+        tooltip.append("div").attr("class", "date").text(d3.utcFormat("%b %-d, %Y")(d.date));
+        [["Strategy", d.strategy, "var(--series-1)"], ["Buy & hold", d.benchmark, "var(--series-2)"]]
+          .forEach(function (row) {
+            const r = tooltip.append("div").attr("class", "row");
+            r.append("div").attr("class", "key").style("background", row[2]);
+            r.append("span").text(row[0]);
+            r.append("span").attr("class", "val").text("$" + row[1].toFixed(3));
+          });
+      }
+      overlay.on("pointermove", onMove)
+        .on("pointerleave", function () { crosshair.style("opacity", 0); tooltip.style("opacity", 0); });
+    });
+  }
+
+  function renderDrawdownChart(container, daily) {
+    const card = container.append("div").attr("class", "card");
+    card.append("h2").text("Strategy drawdown");
+    card.append("p").attr("class", "subtitle").text("Decline from the strategy's own running peak equity.");
+
+    makeResponsiveChart(card, 220, function (svg, width, height, tooltip) {
+      const margin = { top: 10, right: 20, bottom: 26, left: 48 };
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+      const g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      const parseDate = d3.utcParse("%Y-%m-%d");
+      const data = daily.map(function (d) { return { date: parseDate(d.date), drawdown: d.strategy_drawdown }; });
+
+      const x = d3.scaleUtc().domain(d3.extent(data, function (d) { return d.date; })).range([0, innerW]);
+      const yMin = d3.min(data, function (d) { return d.drawdown; });
+      const y = d3.scaleLinear().domain([yMin * 1.05, 0]).range([innerH, 0]);
+
+      g.append("g").selectAll("line").data(y.ticks(4)).join("line")
+        .attr("class", "gridline")
+        .attr("x1", 0).attr("x2", innerW).attr("y1", y).attr("y2", y);
+
+      g.append("g").attr("transform", "translate(0," + innerH + ")")
+        .call(d3.axisBottom(x).ticks(Math.max(innerW / 100, 2)).tickSizeOuter(0))
+        .call(function (sel) { sel.select(".domain").attr("class", "axis-line"); sel.selectAll("line").remove(); });
+
+      g.append("g")
+        .call(d3.axisLeft(y).ticks(4).tickFormat(function (v) { return (v * 100).toFixed(0) + "%"; }).tickSizeOuter(0))
+        .call(function (sel) { sel.select(".domain").remove(); sel.selectAll("line").remove(); });
+
+      const area = d3.area().x(function (d) { return x(d.date); }).y0(y(0)).y1(function (d) { return y(d.drawdown); });
+      g.append("path").datum(data).attr("fill", "var(--series-1)").attr("opacity", 0.1).attr("d", area);
+
+      const line = d3.line().x(function (d) { return x(d.date); }).y(function (d) { return y(d.drawdown); });
+      g.append("path").datum(data).attr("fill", "none").attr("stroke", "var(--series-1)")
+        .attr("stroke-width", 2).attr("stroke-linejoin", "round").attr("stroke-linecap", "round").attr("d", line);
+
+      const bisect = d3.bisector(function (d) { return d.date; }).left;
+      const crosshair = g.append("line").attr("class", "crosshair").attr("y1", 0).attr("y2", innerH).style("opacity", 0);
+      const overlay = g.append("rect").attr("width", innerW).attr("height", innerH)
+        .attr("fill", "transparent").style("cursor", "crosshair");
+
+      overlay.on("pointermove", function (event) {
+        const [mx] = d3.pointer(event);
+        const date = x.invert(mx);
+        const i = Math.min(bisect(data, date, 1), data.length - 1);
+        const d0 = data[i - 1], d1 = data[i];
+        const d = (d1 && date - d0.date > d1.date - date) ? d1 : d0;
+        if (!d) return;
+        crosshair.attr("x1", x(d.date)).attr("x2", x(d.date)).style("opacity", 1);
+        tooltip.style("opacity", 1)
+          .style("left", (margin.left + x(d.date) + 14) + "px")
+          .style("top", margin.top + "px")
+          .html("");
+        tooltip.append("div").attr("class", "date").text(d3.utcFormat("%b %-d, %Y")(d.date));
+        const r = tooltip.append("div").attr("class", "row");
+        r.append("div").attr("class", "key").style("background", "var(--series-1)");
+        r.append("span").text("Drawdown");
+        r.append("span").attr("class", "val").text((d.drawdown * 100).toFixed(1) + "%");
+      }).on("pointerleave", function () { crosshair.style("opacity", 0); tooltip.style("opacity", 0); });
+    });
+  }
+
+  function render(summary, daily) {
+    const root = d3.select("#content");
+    root.selectAll("*").remove();
+
+    if (!summary.length || !daily.length) {
+      root.append("div").attr("class", "empty-state")
+        .text("No backtest data yet — the pipeline hasn't run. Check back after the next scheduled run.");
+      return;
+    }
+
+    const summaryByMetric = new Map(summary.map(function (d) { return [d.metric, d]; }));
+    renderKpis(root, summaryByMetric);
+    renderSummaryTable(root, summaryByMetric);
+    renderEquityChart(root, daily);
+    renderDrawdownChart(root, daily);
+  }
+
+  Promise.all([
+    fetch("data/backtest_summary.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+    fetch("data/backtest_daily.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+  ]).then(function (results) {
+    render(results[0], results[1]);
+  }).catch(function (err) {
+    d3.select("#content").html("");
+    d3.select("#content").append("div").attr("class", "error-state")
+      .text("Couldn't load backtest data (" + err.message + "). The pipeline may not have run yet.");
+  });
+})();
+</script>
+</body>
+</html>

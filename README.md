@@ -12,7 +12,7 @@ below.
 - [x] **Week 1 — Ingestion**: daily OHLCV → DuckDB, idempotent, logged
 - [x] **Week 2 — dbt transformation layer** (staging → intermediate → marts)
 - [x] **Week 3 — Backtest** (moving-average crossover vs. buy-and-hold)
-- [ ] **Week 4 — Ship** (GitHub Actions schedule + D3.js dashboard on GitHub Pages)
+- [ ] **Week 4 — Ship** (dashboard done; GitHub Actions schedule still open)
 
 ## Architecture (current)
 
@@ -35,6 +35,12 @@ yfinance  --->  src/ingest.py  --->  DuckDB (raw_ohlcv)
                         |
                         v
      DuckDB (backtest_daily, backtest_trades, backtest_summary)
+                        |
+                        v
+        src/export_dashboard_data.py --> docs/data/*.json
+                        |
+                        v
+           docs/index.html (D3.js, static, GitHub Pages)
 ```
 
 ## Universe
@@ -181,6 +187,47 @@ trade-boundary extraction (including a position still open at the end of
 the window), and the metric formulas — against small hand-verifiable
 synthetic series, no DuckDB or network involved.
 
+## Dashboard
+
+A static D3.js page (`docs/index.html`) — no server, no build step, no
+framework. Reads two pre-computed JSON files rather than querying DuckDB
+live, since GitHub Pages only serves static files:
+
+```bash
+python -m src.export_dashboard_data   # writes docs/data/*.json from the DuckDB tables
+```
+
+`docs/data/` is gitignored — it's generated output, not something to hand-edit
+or commit, and is meant to be refreshed by the scheduled pipeline (Week 4's
+remaining piece) rather than go stale in git history.
+
+**What's on the page**: a KPI row (total return, Sharpe, max drawdown, win
+rate, exposure, trade count — strategy vs. buy-and-hold), a plain HTML
+table mirroring those same numbers (the accessible, non-chart twin of the
+KPI row), an equity curve (both series indexed to $1, one shared axis —
+never a dual-axis chart), and a strategy drawdown chart. Every chart has a
+crosshair-driven tooltip; hover/focus works the same way via keyboard.
+Dark mode follows the OS setting, same data, separately validated colors.
+
+**Color**: the two series colors (strategy blue, benchmark orange) are
+validated for colorblind-safety and contrast, not eyeballed — run
+`node scripts/validate_palette.js "#2a78d6,#eb6834" --mode light` from a
+checkout of the `dataviz` design-system skill this dashboard's palette
+comes from. Both modes clear every check (worst-pair CVD ΔE 24.7 light /
+26.8 dark against an 8-point target).
+
+**Known limitation**: the equity/drawdown charts don't have a raw-data
+table twin (hundreds of daily rows isn't practical as an inline table for
+a 90-second-skim dashboard) — the KPI/summary numbers do, and every
+individual value is still reachable via the chart tooltip. A disclosed
+scope cut, not an oversight.
+
+Tests (`tests/test_export_dashboard_data.py`) cover the export logic —
+date formatting, NaN-to-null handling (JSON has no NaN; a zero-variance
+Sharpe would otherwise break the page), drawdown math, and that a null
+benchmark metric survives the round trip — against a temp DuckDB file, no
+network.
+
 ## Assumptions & limitations
 
 - **Survivorship bias**: the universe is today's large caps, not a
@@ -201,6 +248,6 @@ synthetic series, no DuckDB or network involved.
 
 ## Stack
 
-Python, DuckDB, dbt-core + dbt-duckdb, pandas/numpy, GitHub Actions
-(Week 4), D3.js on GitHub Pages (Week 4 dashboard). See repo for current
-dependencies in `requirements.txt`.
+Python, DuckDB, dbt-core + dbt-duckdb, pandas/numpy, D3.js on GitHub
+Pages, GitHub Actions (scheduling — remaining Week 4 piece). See repo for
+current dependencies in `requirements.txt`.
