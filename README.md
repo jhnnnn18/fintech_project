@@ -10,15 +10,24 @@ below.
 ## Status
 
 - [x] **Week 1 — Ingestion**: daily OHLCV → DuckDB, idempotent, logged
-- [ ] **Week 2 — dbt transformation layer** (staging → intermediate → marts)
+- [x] **Week 2 — dbt transformation layer** (staging → intermediate → marts)
 - [ ] **Week 3 — Backtest** (moving-average crossover vs. buy-and-hold)
-- [ ] **Week 4 — Ship** (GitHub Actions schedule + dashboard)
+- [ ] **Week 4 — Ship** (GitHub Actions schedule + D3.js dashboard on GitHub Pages)
 
 ## Architecture (current)
 
 ```
 yfinance  --->  src/ingest.py  --->  DuckDB (raw_ohlcv)
                  (idempotent upsert on ticker+date)
+                        |
+                        v
+                 dbt: staging (stg_ohlcv)
+                        |
+                        v
+             dbt: intermediate (int_daily_returns, int_rolling_metrics)
+                        |
+                        v
+              dbt: marts (fct_daily_metrics)
 ```
 
 ## Universe
@@ -69,6 +78,48 @@ Tests cover the upsert logic (insert, idempotent re-run, refresh-on-conflict,
 multi-ticker isolation) against a temp DuckDB file — no network calls, so
 they run the same in CI as locally.
 
+## dbt models
+
+Layered `staging -> intermediate -> marts`, all reading from and writing to
+the same DuckDB file `src/ingest.py` populates — no separate warehouse to
+run or configure.
+
+```bash
+cd dbt
+DBT_PROFILES_DIR=. dbt seed    # loads config/tickers.yaml's ticker -> asset_type/sector lookup
+DBT_PROFILES_DIR=. dbt run
+DBT_PROFILES_DIR=. dbt test
+DBT_PROFILES_DIR=. dbt docs generate && DBT_PROFILES_DIR=. dbt docs serve
+```
+
+- **`stg_ohlcv`** (staging): typed/cleaned OHLCV, one row per `(ticker, date)`,
+  with a concatenated surrogate key.
+- **`int_daily_returns`** (intermediate): daily return and drawdown-from-
+  rolling-peak, computed on `adj_close` (not `close`) so stock splits and
+  dividends don't masquerade as price moves — this matters for Week 3, where
+  a naive `close`-based signal could fire a false moving-average crossover
+  on a split date.
+- **`int_rolling_metrics`** (intermediate): 20/50/200-day moving averages and
+  20-day annualized realized volatility (`stdev * sqrt(252)`), also on
+  `adj_close`.
+- **`fct_daily_metrics`** (mart): the one table a dashboard or backtest
+  would actually query — joins the above plus a `ticker_reference` seed
+  (asset type, sector) at `(ticker, date)` grain.
+
+Every model has `not_null` tests on its key columns; the mart and seed carry
+`accepted_values` tests (`asset_type` in `['etf', 'stock']`); two custom
+singular tests enforce no future-dated rows and no negative volume; a third
+enforces no duplicate `(ticker, date)` rows in the mart, since it's a
+three-way join. 28 tests total, all passing.
+
+**Known limitation**: moving averages and volatility near the start of each
+ticker's history are computed over a partial window (e.g. the 200-day MA
+has only a few days of real history behind it on day 5) — intentional and
+documented rather than hidden, since backfilling with padded/fake data would
+be worse. `ticker_reference.csv` is a static seed mirroring
+`config/tickers.yaml`; adding a custom ticker there means updating both
+files.
+
 ## Assumptions & limitations
 
 - **Survivorship bias**: the universe is today's large caps, not a
@@ -83,5 +134,6 @@ they run the same in CI as locally.
 
 ## Stack
 
-Python, DuckDB, dbt (Week 2+), GitHub Actions (Week 4). See repo for
-current dependencies in `requirements.txt`.
+Python, DuckDB, dbt-core + dbt-duckdb, GitHub Actions (Week 4), D3.js on
+GitHub Pages (Week 4 dashboard). See repo for current dependencies in
+`requirements.txt`.
