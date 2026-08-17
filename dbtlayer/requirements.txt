@@ -1,0 +1,7 @@
+duckdb>=0.10.0
+pandas>=2.0.0
+yfinance>=0.2.40
+pyyaml>=6.0
+pytest>=7.4
+dbt-core>=1.8,<2.0
+dbt-duckdb>=1.8,<2.0

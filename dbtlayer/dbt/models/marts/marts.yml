@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: fct_daily_metrics
+    description: >
+      One row per (ticker, date): price, daily return, drawdown from rolling
+      peak, 20/50/200-day moving averages, and 20-day annualized realized
+      volatility. Feeds the Week 3 backtest and the Week 4 dashboard.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: asset_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['etf', 'stock']
+      - name: adj_close
+        tests: [not_null]
