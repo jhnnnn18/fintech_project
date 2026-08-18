@@ -194,43 +194,61 @@ synthetic series, no DuckDB or network involved.
 ## Dashboard
 
 A static D3.js page (`docs/index.html`) — no server, no build step, no
-framework. Reads two pre-computed JSON files rather than querying DuckDB
-live, since GitHub Pages only serves static files:
+framework. Reads pre-computed JSON files rather than querying DuckDB live,
+since GitHub Pages only serves static files:
 
 ```bash
-python -m src.export_dashboard_data   # writes docs/data/*.json from the DuckDB tables
+python -m src.export_dashboard_data   # writes docs/data/*.json and docs/data/tickers/*.json
 ```
 
-`docs/data/` is gitignored — it's generated output, not something to hand-edit
-or commit, and is meant to be refreshed by the scheduled pipeline (Week 4's
-remaining piece) rather than go stale in git history.
+`docs/data/` is tracked in git — GitHub Pages only serves files actually
+committed to the branch, so the generated JSON has to live in the repo for
+the dashboard to work. It's meant to be refreshed by the CI pipeline (see
+[Orchestration](#orchestration)), not hand-edited; don't commit local
+synthetic/test data here by hand, since it would look like real backtest
+output to anyone viewing the dashboard.
 
-**What's on the page**: a KPI row (total return, Sharpe, max drawdown, win
-rate, exposure, trade count — strategy vs. buy-and-hold), a plain HTML
-table mirroring those same numbers (the accessible, non-chart twin of the
-KPI row), an equity curve (both series indexed to $1, one shared axis —
-never a dual-axis chart), and a strategy drawdown chart. Every chart has a
-crosshair-driven tooltip; hover/focus works the same way via keyboard.
-Dark mode follows the OS setting, same data, separately validated colors.
+**What's on the page**:
+- A KPI row (total return, Sharpe, max drawdown, win rate, exposure, trade
+  count — strategy vs. buy-and-hold), plus a plain HTML table mirroring the
+  same numbers (the accessible, non-chart twin of the KPI row).
+- An equity curve (both series indexed to $1, one shared axis — never a
+  dual-axis chart) and a strategy drawdown chart, both portfolio-level
+  (the whole 25-ticker universe, blended).
+- A **price & moving-averages chart, filterable to one ticker at a time**
+  via a dropdown — `adj_close`, MA20, MA50 for whichever ticker is
+  selected, fetched lazily from `docs/data/tickers/<TICKER>.json` on
+  change rather than loaded upfront, so picking a per-ticker view doesn't
+  slow down the initial page load for visitors who never touch the
+  dropdown. This is a plain price view independent of the backtest's
+  warm-up cutoff (it's not a trading signal, so there's no lookahead
+  concern to exclude data for).
 
-**Color**: the two series colors (strategy blue, benchmark orange) are
-validated for colorblind-safety and contrast, not eyeballed — run
-`node scripts/validate_palette.js "#2a78d6,#eb6834" --mode light` from a
-checkout of the `dataviz` design-system skill this dashboard's palette
-comes from. Both modes clear every check (worst-pair CVD ΔE 24.7 light /
-26.8 dark against an 8-point target).
+Every chart has a crosshair-driven tooltip; hover/focus works the same way
+via keyboard. Dark mode follows the OS setting, same data, separately
+validated colors.
 
-**Known limitation**: the equity/drawdown charts don't have a raw-data
-table twin (hundreds of daily rows isn't practical as an inline table for
-a 90-second-skim dashboard) — the KPI/summary numbers do, and every
-individual value is still reachable via the chart tooltip. A disclosed
-scope cut, not an oversight.
+**Color**: series colors are validated for colorblind-safety and contrast,
+not eyeballed — run `node scripts/validate_palette.js "<hex,hex,...>"
+--mode light` (and `--mode dark`) from a checkout of the `dataviz`
+design-system skill this dashboard's palette comes from. The 2-color
+equity/benchmark pair clears every check (worst-pair CVD ΔE 24.7 light /
+26.8 dark against an 8-point target); the 3-color price/MA20/MA50 set also
+clears every check, with one disclosed WARN (the third slot, aqua, sits
+below 3:1 contrast on the light surface) mitigated by the legend's visible
+text labels and the tooltip's exact-value readout — not color alone.
+
+**Known limitation**: the equity/drawdown/price charts don't have a
+raw-data table twin (hundreds to thousands of daily rows isn't practical
+as an inline table for a 90-second-skim dashboard) — the KPI/summary
+numbers do, and every individual value is still reachable via the chart
+tooltip. A disclosed scope cut, not an oversight.
 
 Tests (`tests/test_export_dashboard_data.py`) cover the export logic —
 date formatting, NaN-to-null handling (JSON has no NaN; a zero-variance
-Sharpe would otherwise break the page), drawdown math, and that a null
-benchmark metric survives the round trip — against a temp DuckDB file, no
-network.
+Sharpe would otherwise break the page), drawdown math, a null benchmark
+metric surviving the round trip, and the per-ticker grouping/rounding/date
+ordering — against a temp DuckDB file, no network.
 
 ## Orchestration
 

@@ -15,8 +15,9 @@
     --gridline:       #e1e0d9;
     --baseline:       #c3c2b7;
     --border:         rgba(11,11,11,0.10);
-    --series-1:       #2a78d6; /* strategy */
-    --series-2:       #eb6834; /* benchmark */
+    --series-1:       #2a78d6; /* strategy / price */
+    --series-2:       #eb6834; /* benchmark / MA 20 */
+    --series-3:       #1baf7a; /* MA 50 */
     --success-text:   #006300;
   }
   @media (prefers-color-scheme: dark) {
@@ -32,6 +33,7 @@
       --border:         rgba(255,255,255,0.10);
       --series-1:       #3987e5;
       --series-2:       #d95926;
+      --series-3:       #199e70;
       --success-text:   #0ca30c;
     }
   }
@@ -126,6 +128,18 @@
     color: var(--text-muted);
     font-weight: 500;
     font-size: 12px;
+  }
+
+  .filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .filter-row label { font-size: 12px; color: var(--text-secondary); }
+  .ticker-select {
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
   }
 
   .legend { display: flex; gap: 16px; margin-bottom: 8px; }
@@ -424,7 +438,145 @@
     });
   }
 
-  function render(summary, daily) {
+  function renderPriceChart(svg, width, height, tooltip, rows) {
+    const margin = { top: 10, right: 20, bottom: 26, left: 56 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+    const g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    const parseDate = d3.utcParse("%Y-%m-%d");
+    const data = rows.map(function (d) {
+      return { date: parseDate(d.date), price: d.adj_close, ma20: d.ma_20, ma50: d.ma_50 };
+    });
+
+    const x = d3.scaleUtc().domain(d3.extent(data, function (d) { return d.date; })).range([0, innerW]);
+    const yMin = d3.min(data, function (d) { return Math.min(d.price, d.ma20, d.ma50); });
+    const yMax = d3.max(data, function (d) { return Math.max(d.price, d.ma20, d.ma50); });
+    const y = d3.scaleLinear().domain([yMin * 0.97, yMax * 1.03]).range([innerH, 0]);
+
+    g.append("g").selectAll("line").data(y.ticks(5)).join("line")
+      .attr("class", "gridline")
+      .attr("x1", 0).attr("x2", innerW).attr("y1", y).attr("y2", y);
+
+    g.append("g").attr("transform", "translate(0," + innerH + ")")
+      .call(d3.axisBottom(x).ticks(Math.max(innerW / 100, 2)).tickSizeOuter(0))
+      .call(function (sel) { sel.select(".domain").attr("class", "axis-line"); sel.selectAll("line").remove(); });
+
+    g.append("g")
+      .call(d3.axisLeft(y).ticks(5).tickFormat(function (v) { return "$" + v.toFixed(0); }).tickSizeOuter(0))
+      .call(function (sel) { sel.select(".domain").remove(); sel.selectAll("line").remove(); });
+
+    function drawLine(key, color) {
+      const line = d3.line().x(function (d) { return x(d.date); }).y(function (d) { return y(d[key]); });
+      g.append("path").datum(data).attr("fill", "none").attr("stroke", color)
+        .attr("stroke-width", 2).attr("stroke-linejoin", "round").attr("stroke-linecap", "round")
+        .attr("d", line);
+      const last = data[data.length - 1];
+      g.append("circle").attr("cx", x(last.date)).attr("cy", y(last[key])).attr("r", 4)
+        .attr("fill", color).attr("stroke", "var(--surface-1)").attr("stroke-width", 2);
+    }
+    drawLine("price", "var(--series-1)");
+    drawLine("ma20", "var(--series-2)");
+    drawLine("ma50", "var(--series-3)");
+
+    const bisect = d3.bisector(function (d) { return d.date; }).left;
+    const crosshair = g.append("line").attr("class", "crosshair").attr("y1", 0).attr("y2", innerH).style("opacity", 0);
+    const overlay = g.append("rect").attr("width", innerW).attr("height", innerH)
+      .attr("fill", "transparent").style("cursor", "crosshair");
+
+    overlay.on("pointermove", function (event) {
+      const [mx] = d3.pointer(event);
+      const date = x.invert(mx);
+      const i = Math.min(bisect(data, date, 1), data.length - 1);
+      const d0 = data[i - 1], d1 = data[i];
+      const d = (d1 && date - d0.date > d1.date - date) ? d1 : d0;
+      if (!d) return;
+      crosshair.attr("x1", x(d.date)).attr("x2", x(d.date)).style("opacity", 1);
+      tooltip.style("opacity", 1)
+        .style("left", (margin.left + x(d.date) + 14) + "px")
+        .style("top", margin.top + "px")
+        .html("");
+      tooltip.append("div").attr("class", "date").text(d3.utcFormat("%b %-d, %Y")(d.date));
+      [["Price", d.price, "var(--series-1)"], ["MA 20", d.ma20, "var(--series-2)"], ["MA 50", d.ma50, "var(--series-3)"]]
+        .forEach(function (row) {
+          const r = tooltip.append("div").attr("class", "row");
+          r.append("div").attr("class", "key").style("background", row[2]);
+          r.append("span").text(row[0]);
+          r.append("span").attr("class", "val").text("$" + row[1].toFixed(2));
+        });
+    }).on("pointerleave", function () { crosshair.style("opacity", 0); tooltip.style("opacity", 0); });
+  }
+
+  function renderTickerChart(container, tickers) {
+    const card = container.append("div").attr("class", "card");
+    card.append("h2").text("Price & moving averages");
+    card.append("p").attr("class", "subtitle")
+      .text("20/50-day moving averages on adjusted close, one ticker at a time.");
+
+    if (!tickers.length) {
+      card.append("div").attr("class", "empty-state").text("No ticker price data yet.");
+      return;
+    }
+
+    const filterRow = card.append("div").attr("class", "filter-row");
+    filterRow.append("label").attr("for", "ticker-select").text("Ticker");
+    const select = filterRow.append("select").attr("id", "ticker-select").attr("class", "ticker-select");
+    select.selectAll("option").data(tickers).join("option")
+      .attr("value", function (d) { return d; })
+      .text(function (d) { return d; });
+
+    const legend = card.append("div").attr("class", "legend");
+    [["Price", "var(--series-1)"], ["MA 20", "var(--series-2)"], ["MA 50", "var(--series-3)"]].forEach(function (d) {
+      const item = legend.append("div").attr("class", "legend-item");
+      item.append("div").attr("class", "legend-swatch").style("background", d[1]);
+      item.append("span").text(d[0]);
+    });
+
+    const wrap = card.append("div").attr("class", "chart-wrap");
+    const tooltip = wrap.append("div").attr("class", "tooltip");
+    const status = card.append("div").attr("class", "error-state").style("display", "none");
+
+    let currentRows = [];
+    const height = 320;
+
+    function draw() {
+      const width = wrap.node().getBoundingClientRect().width;
+      if (width <= 0 || !currentRows.length) return;
+      wrap.selectAll("svg").remove();
+      const svg = wrap.append("svg").attr("width", width).attr("height", height)
+        .attr("viewBox", "0 0 " + width + " " + height);
+      renderPriceChart(svg, width, height, tooltip, currentRows);
+    }
+
+    function loadTicker(ticker) {
+      status.style("display", "none");
+      wrap.style("opacity", 0.5);  // hold the previous render while the new one loads
+      fetch("data/tickers/" + ticker + ".json")
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (rows) {
+          currentRows = rows;
+          wrap.style("opacity", 1);
+          draw();
+        })
+        .catch(function () {
+          wrap.style("opacity", 1);
+          wrap.selectAll("svg").remove();
+          status.style("display", "block").text("Couldn't load price data for " + ticker + ".");
+        });
+    }
+
+    select.on("change", function () { loadTicker(this.value); });
+
+    let raf = null;
+    new ResizeObserver(function () {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
+    }).observe(wrap.node());
+
+    loadTicker(tickers[0]);
+  }
+
+  function render(summary, daily, tickers) {
     const root = d3.select("#content");
     root.selectAll("*").remove();
 
@@ -439,13 +591,15 @@
     renderSummaryTable(root, summaryByMetric);
     renderEquityChart(root, daily);
     renderDrawdownChart(root, daily);
+    renderTickerChart(root, tickers);
   }
 
   Promise.all([
     fetch("data/backtest_summary.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
     fetch("data/backtest_daily.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+    fetch("data/tickers_index.json").then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
   ]).then(function (results) {
-    render(results[0], results[1]);
+    render(results[0], results[1], results[2]);
   }).catch(function (err) {
     d3.select("#content").html("");
     d3.select("#content").append("div").attr("class", "error-state")
