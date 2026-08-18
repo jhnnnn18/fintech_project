@@ -36,6 +36,13 @@ def _json_safe(value):
     return value
 
 
+def _round_safe(value, ndigits=4):
+    """4 decimal places is far more precision than a price chart needs and
+    keeps the per-ticker JSON small -- full float64 repr roughly doubles it."""
+    value = _json_safe(value)
+    return round(value, ndigits) if isinstance(value, float) else value
+
+
 def export_daily(conn: duckdb.DuckDBPyConnection) -> list[dict]:
     rows = conn.execute("""
         SELECT
@@ -67,18 +74,47 @@ def export_summary(conn: duckdb.DuckDBPyConnection) -> list[dict]:
     ]
 
 
-def run(db_path: Path, out_dir: Path) -> None:
+def export_ticker_prices(conn: duckdb.DuckDBPyConnection) -> dict[str, list[dict]]:
+    """One series per ticker: adj_close, ma_20, ma_50, for the standalone
+    per-ticker price/MA chart -- independent of the backtest's warm-up cut,
+    since this is a plain price view, not a trading signal."""
+    rows = conn.execute("""
+        SELECT ticker, date, adj_close, ma_20, ma_50
+        FROM fct_daily_metrics
+        ORDER BY ticker, date
+    """).fetchall()
+    by_ticker: dict[str, list[dict]] = {}
+    for ticker, date, adj_close, ma_20, ma_50 in rows:
+        by_ticker.setdefault(ticker, []).append({
+            "date": date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else date,
+            "adj_close": _round_safe(adj_close),
+            "ma_20": _round_safe(ma_20),
+            "ma_50": _round_safe(ma_50),
+        })
+    return by_ticker
+
+
+def run(db_path: Path, out_dir: Path, tickers_out_dir: Path | None = None) -> None:
+    tickers_out_dir = tickers_out_dir or out_dir / "tickers"
     conn = duckdb.connect(str(db_path))
     out_dir.mkdir(parents=True, exist_ok=True)
+    tickers_out_dir.mkdir(parents=True, exist_ok=True)
 
     daily_records = export_daily(conn)
     summary_records = export_summary(conn)
+    ticker_prices = export_ticker_prices(conn)
     conn.close()
 
     (out_dir / "backtest_daily.json").write_text(json.dumps(daily_records))
     (out_dir / "backtest_summary.json").write_text(json.dumps(summary_records))
+    for ticker, records in ticker_prices.items():
+        (tickers_out_dir / f"{ticker}.json").write_text(json.dumps(records))
+    (out_dir / "tickers_index.json").write_text(json.dumps(sorted(ticker_prices.keys())))
+
     logger.info("wrote %d daily rows and %d summary rows to %s",
                 len(daily_records), len(summary_records), out_dir)
+    logger.info("wrote per-ticker price data for %d tickers to %s",
+                len(ticker_prices), tickers_out_dir)
 
 
 if __name__ == "__main__":
