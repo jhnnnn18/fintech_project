@@ -1,0 +1,26 @@
+ticker,asset_type,sector
+XLK,etf,Technology
+XLF,etf,Financials
+XLE,etf,Energy
+XLV,etf,Health Care
+XLY,etf,Consumer Discretionary
+AAPL,stock,Technology
+MSFT,stock,Technology
+JPM,stock,Financials
+V,stock,Financials
+JNJ,stock,Health Care
+PG,stock,Consumer Staples
+KO,stock,Consumer Staples
+WMT,stock,Consumer Staples
+XOM,stock,Energy
+CVX,stock,Energy
+HD,stock,Consumer Discretionary
+UNH,stock,Health Care
+MA,stock,Financials
+BAC,stock,Financials
+GS,stock,Financials
+CAT,stock,Industrials
+IBM,stock,Technology
+CSCO,stock,Technology
+DIS,stock,Communication Services
+NVDA,stock,Technology

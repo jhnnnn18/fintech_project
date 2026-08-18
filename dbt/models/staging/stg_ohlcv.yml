@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_ohlcv
+    description: Cleaned OHLCV data, one row per (ticker, date) trading day.
+    columns:
+      - name: ohlcv_id
+        description: Surrogate key concatenated from (ticker, date).
+        tests: [not_null, unique]
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close
+        tests: [not_null]
+      - name: adj_close
+        tests: [not_null]
+      - name: volume
+        tests: [not_null]

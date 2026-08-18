@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: int_daily_returns
+    description: >
+      Daily return and drawdown-from-rolling-peak per ticker, based on
+      adj_close. First trading day per ticker has a null daily_return
+      (no prior day to compare against) — expected, not a data quality issue.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: adj_close
+        tests: [not_null]
+      - name: drawdown
+        tests: [not_null]
+
+  - name: int_rolling_metrics
+    description: >
+      Rolling moving averages (20/50/200-day) and 20-day annualized realized
+      volatility per ticker, based on adj_close.
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: ma_20
+        tests: [not_null]

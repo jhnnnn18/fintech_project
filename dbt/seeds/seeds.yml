@@ -1,0 +1,18 @@
+version: 2
+
+seeds:
+  - name: ticker_reference
+    description: >
+      Static ticker -> asset type / sector lookup, mirroring
+      config/tickers.yaml. Update both when adding a ticker.
+    columns:
+      - name: ticker
+        tests: [not_null, unique]
+      - name: asset_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['etf', 'stock']
+      - name: sector
+        tests: [not_null]

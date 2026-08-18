@@ -1,0 +1,7 @@
+market_data_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "../data/market_data.duckdb"
+      threads: 4

@@ -1,0 +1,31 @@
+name: 'market_data_pipeline'
+version: '1.0.0'
+config-version: 2
+
+profile: 'market_data_pipeline'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  market_data_pipeline:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  market_data_pipeline:
+    +column_types:
+      ticker: varchar
+      asset_type: varchar
+      sector: varchar

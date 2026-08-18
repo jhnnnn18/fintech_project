@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: main
+    tables:
+      - name: raw_ohlcv
+        description: >
+          Daily OHLCV data landed by src/ingest.py, one row per (ticker, date).
+          Idempotently upserted from yfinance.
+        columns:
+          - name: ticker
+            tests: [not_null]
+          - name: date
+            tests: [not_null]
