@@ -1,0 +1,56 @@
+name: Refresh data, run backtest, and rebuild dashboard
+
+# NOTE: `schedule` only fires on the repo's default branch -- while this
+# workflow lives on a feature branch, only manual runs (workflow_dispatch,
+# from the Actions tab) actually execute it. The cron activates once this
+# is merged to main.
+on:
+  schedule:
+    - cron: '0 21 * * 1-5'  # weekdays, ~9pm UTC -- after NYSE close year-round
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest OHLCV data
+        run: python -m src.ingest
+
+      - name: Build and test dbt models
+        working-directory: dbt
+        run: |
+          DBT_PROFILES_DIR=. dbt seed
+          DBT_PROFILES_DIR=. dbt run
+          DBT_PROFILES_DIR=. dbt test
+
+      - name: Run backtest
+        run: python -m src.backtest
+
+      - name: Export dashboard data
+        run: python -m src.export_dashboard_data
+
+      - name: Commit refreshed dashboard data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "No dashboard data changes -- nothing to commit"
+          else
+            git commit -m "Refresh dashboard data"
+            # actions/checkout leaves the runner in detached HEAD; push
+            # explicitly to the branch that triggered this run.
+            git push origin HEAD:${{ github.ref_name }}
+          fi

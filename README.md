@@ -12,9 +12,13 @@ below.
 - [x] **Week 1 — Ingestion**: daily OHLCV → DuckDB, idempotent, logged
 - [x] **Week 2 — dbt transformation layer** (staging → intermediate → marts)
 - [x] **Week 3 — Backtest** (moving-average crossover vs. buy-and-hold)
-- [ ] **Week 4 — Ship** (dashboard done; GitHub Actions schedule still open)
+- [x] **Week 4 — Ship** (dashboard + GitHub Actions orchestration; see the
+  default-branch caveat in [Orchestration](#orchestration))
 
 ## Architecture (current)
+
+The whole chain below runs end to end on a GitHub Actions schedule (see
+[Orchestration](#orchestration)):
 
 ```
 yfinance  --->  src/ingest.py  --->  DuckDB (raw_ohlcv)
@@ -228,6 +232,40 @@ Sharpe would otherwise break the page), drawdown math, and that a null
 benchmark metric survives the round trip — against a temp DuckDB file, no
 network.
 
+## Orchestration
+
+`.github/workflows/pipeline.yml` runs the whole chain end to end: ingest →
+dbt seed/run/test → backtest → export → commit the refreshed
+`docs/data/*.json` back to the repo. GitHub Actions gives every step full
+internet access, unlike the sandboxed environment this was built in, where
+Yahoo Finance and dbt's package registry were both blocked by network
+policy — the CI run is the first place this pipeline actually touches real
+market data end to end.
+
+**Known caveat, disclosed rather than hidden**: the workflow's `schedule`
+trigger only fires on the repository's **default branch** — while this
+lives on a feature branch, only manual runs (the "Run workflow" button
+under the Actions tab, using `workflow_dispatch`) actually execute it. The
+cron activates once this branch is merged to `main`.
+
+**Committing generated data back to the repo** (rather than, say, an
+external database or object store) is a deliberate choice for a
+portfolio-scale project: no infrastructure to provision, the dashboard's
+data has a visible commit history, and GitHub Pages can serve it directly
+with zero extra moving parts. The tradeoff is real — this doesn't scale to
+high-frequency data or a large team pushing to the same branch — and is
+fine at this project's size.
+
+The DuckDB file itself is rebuilt from scratch on every run rather than
+cached between runs (ingestion is idempotent, so this is correctness-free,
+just a bit more bandwidth than an incremental fetch would use) — simpler
+than wiring up cross-run cache restore for a dataset this small.
+
+**Enabling GitHub Pages** (manual, one-time, in the repo's Settings on
+GitHub.com — not something a workflow file can do on its own): Settings →
+Pages → Source: "Deploy from a branch" → Branch: this branch → Folder:
+`/docs` → Save.
+
 ## Assumptions & limitations
 
 - **Survivorship bias**: the universe is today's large caps, not a
@@ -249,5 +287,5 @@ network.
 ## Stack
 
 Python, DuckDB, dbt-core + dbt-duckdb, pandas/numpy, D3.js on GitHub
-Pages, GitHub Actions (scheduling — remaining Week 4 piece). See repo for
-current dependencies in `requirements.txt`.
+Pages, GitHub Actions. See repo for current dependencies in
+`requirements.txt`.
